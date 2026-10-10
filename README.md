@@ -1,6 +1,6 @@
 # Restorative Control and the Limits of Safe Model Discrimination
 
-**Paper:** [arXiv:XXXX.XXXXX](https://arxiv.org/abs/XXXX.XXXXX)
+**Paper:** [arXiv:2610.09442](https://arxiv.org/abs/2610.09442)
 
 This repository reproduces both figures and every numerical value reported in
 the paper.
@@ -64,10 +64,10 @@ You can cite the paper with:
   title         = {Restorative Control and the Limits of Safe Model Discrimination},
   author        = {Myers, Jr., Micheal},
   year          = {2026},
-  eprint        = {XXXX.XXXXX},
+  eprint        = {2610.09442},
   archivePrefix = {arXiv},
   primaryClass  = {eess.SY},
-  url           = {https://arxiv.org/abs/XXXX.XXXXX}
+  url           = {https://arxiv.org/abs/2610.09442}
 }
 ```
 
