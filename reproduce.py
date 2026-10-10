@@ -1,0 +1,143 @@
+"""Reproduce every figure and numerical value in the paper.
+
+    python reproduce.py
+
+Writes outputs/figures/ and outputs/results/. Every certificate check is an
+assertion, so the script stops if a reported inequality fails.
+"""
+import json
+import time
+from pathlib import Path
+
+import numpy as np
+
+from restorative_control import certificates as C
+from restorative_control import figure1, figure2
+from restorative_control import model as M
+
+OUT = Path(__file__).resolve().parent / "outputs"
+
+
+def sci(x):
+    e = int(np.floor(np.log10(abs(x))))
+    return f"{x / 10**e:.2f}e{e}"
+
+
+def table(header, rows):
+    lines = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
+    lines += ["| " + " | ".join(str(c) for c in row) + " |" for row in rows]
+    return "\n".join(lines)
+
+
+def main():
+    start = time.time()
+    (OUT / "figures").mkdir(parents=True, exist_ok=True)
+    (OUT / "results").mkdir(parents=True, exist_ok=True)
+
+    print("Lower certificate J_int ...")
+    j_int, quad_err, switches = C.J_int()
+    riemann = C.J_int_riemann_bounds()
+    j_grid = C.J_int_grid()
+    assert riemann[0] < j_int < riemann[1] and riemann[1] - riemann[0] < 5e-5
+    assert abs(j_int - j_grid) < 2e-6
+    assert M.J_ESC <= j_int
+    C.check_backtracking(j_int)
+
+    print("Sufficient certificate J_bar ...")
+    optimum = C.optimize_three_stage()
+    schedule = C.check_schedule(j_int)
+    assert M.THETA1 + M.THETA2 < j_int
+
+    print("Persistence and known-model restoration ...")
+    assert M.RHO_BAR < M.RHO_STAR
+    assert float(M.phi(M.V_RESTORE)) * M.T_W > max(M.THETA1, M.THETA2)
+
+    print("Noisy observations ...")
+    risks = [C.risk_bound(s) for s in M.SIGMAS]
+
+    print("Figures ...")
+    figure1.save(OUT / "figures" / "figure1_overview.pdf")
+    figure2.save(OUT / "figures" / "figure2_exposure.pdf", j_int)
+    _, _, fan = figure2.withdrawal_family()
+
+    table1 = [
+        ("v_max, V", "maximum, known-model drive", f"{M.V_MAX:g}, {M.V_RESTORE:g}"),
+        ("phi_max, v_0, k", "damage-rate parameters", f"{M.PHI_MAX:g}, {M.V0:g}, {M.K:g}"),
+        ("Theta_1, Theta_2", "damage tolerances", f"{M.THETA1:g}, {M.THETA2:g}"),
+        ("a, u_a - delta", "withdrawal margin, band level",
+         f"{M.A_MARGIN:g}, {M.U_A - M.DELTA:g}"),
+        ("u_a", "barrier level", f"{M.U_A:.3g}"),
+        ("a_delta, b_delta", "crossing-band endpoints", f"{M.A_DELTA:.3g}, {M.B_DELTA:.3g}"),
+        ("J_int", "crossing lower bound", f"{j_int:.4g}"),
+        ("J_bar", "sufficient exposure", f"{schedule['exposure']:.4g}"),
+        ("T_w, T_bar_w", "known-model, common withdrawal", f"{M.T_W:.3g}, {M.CERT_TW:.4g}"),
+    ]
+    section5 = [
+        ("sup f' (one-sided constant nu_f)", f"{M.NU_F:.6g}", "7/3"),
+        ("sup of abs(f') on [-1, 4]", f"{M.L_F:g}", "19"),
+        ("persistence radius rho*(a) with a0 = 0.051", f"{M.RHO_STAR:.9f}", f"{M.RHO_STAR:.4f}"),
+        ("Theta_1 + Theta_2", f"{M.THETA1 + M.THETA2:g}", f"{M.THETA1 + M.THETA2:g}"),
+        ("J_int", f"{j_int:.9f}", f"{j_int:.4f}"),
+        ("comparison drive levels", ", ".join(f"{v:g}" for v in M.CERT_DRIVES),
+         ", ".join(f"{v:g}" for v in M.CERT_DRIVES)),
+        ("comparison drive durations", ", ".join(f"{t:g}" for t in M.CERT_DURATIONS),
+         ", ".join(f"{t:g}" for t in M.CERT_DURATIONS)),
+        ("J_bar", f"{schedule['exposure']:.9f}", f"{schedule['exposure']:.6f}"),
+        ("gap J_bar / J_int - 1 (%)", f"{schedule['gap_percent']:.4f}",
+         f"{schedule['gap_percent']:.2f}"),
+        ("common withdrawal time T_bar_w", f"{M.CERT_TW:.6g}", f"{M.CERT_TW:.5f}"),
+        ("sensing horizon T and samples N", f"{M.T_HORIZON:g}, {M.N_SAMPLES}",
+         f"{M.T_HORIZON:g}, {M.N_SAMPLES}"),
+        ("output-separation bound D_0(T)", f"{risks[0]['D0']:.6e}", sci(risks[0]["D0"])),
+    ]
+    for r in risks:
+        section5 += [
+            (f"sigma = {r['sigma']:g}: lower bound on beta_1 + alpha_2",
+             f"{r['lower_bound']:.9f}", f"{r['lower_bound']:.3f}"),
+            (f"sigma = {r['sigma']:g}: minimum failure allowance for r = "
+             f"{M.REQUIRED_RESTORATION:g}", f"{r['min_failure_allowance']:.9f}",
+             f"{r['min_failure_allowance']:.3f}"),
+        ]
+    fig2 = [
+        ("known-model drive V (M1, p = 0)", f"{fan['drive']:g}", f"{fan['drive']:g}"),
+        ("common-safety limit (Theta_1 + Theta_2) / phi(V)",
+         f"{fan['common_safety_limit']:.9f}", f"{fan['common_safety_limit']:g}"),
+        ("failure time of M2 under the maintained drive", f"{fan['M2_failure_time']:.9f}",
+         f"{fan['M2_failure_time']:g}"),
+        ("withdrawal times plotted", ", ".join(f"{t:.3f}" for t in fan["withdrawal_times"]),
+         ""),
+        ("crossing time of s", f"{fan['separator_time']:.6f}", ""),
+    ]
+
+    header = ["Quantity", "Computed", "As printed"]
+    report = "\n\n".join([
+        "# Numerical values reported in the paper",
+        "Generated by `python reproduce.py`. \"As printed\" uses the precision of the paper.",
+        "## Table I\n\n" + table(["Symbol", "Meaning", "Value"], table1),
+        "## Section V\n\n" + table(header, section5),
+        "## Figure 2(c)\n\n" + table(header, fig2),
+    ]) + "\n"
+    (OUT / "results" / "paper_values.md").write_text(report)
+
+    details = dict(
+        J_int=dict(value=j_int, quadrature_error_estimate=quad_err,
+                   riemann_bounds=list(riemann), grid_check=j_grid,
+                   branch_switch_states=list(switches), J_esc=M.J_ESC),
+        optimized_three_stage_schedule=optimum,
+        rounded_schedule=schedule,
+        persistence=dict(a=M.A_MARGIN, a0=M.PERSIST_A0, rho_star=M.RHO_STAR,
+                         rho_bar=M.RHO_BAR),
+        known_model=dict(V=M.V_RESTORE, T_w=M.T_W,
+                         other_model_damage=float(M.phi(M.V_RESTORE)) * M.T_W),
+        noisy_observations=risks,
+        figure2_withdrawal=fan,
+    )
+    (OUT / "results" / "certificates.json").write_text(
+        json.dumps(details, indent=2, default=float) + "\n")
+
+    print(report)
+    print(f"All checks passed in {time.time() - start:.0f} s. Outputs are in {OUT}.")
+
+
+if __name__ == "__main__":
+    main()
