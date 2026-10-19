@@ -1,3 +1,4 @@
+<!-- audience: human -->
 # Restorative Control and the Limits of Safe Model Discrimination
 
 **Paper:** [arXiv:2610.09442](https://arxiv.org/abs/2610.09442)
